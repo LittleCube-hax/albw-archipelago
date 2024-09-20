@@ -1,6 +1,5 @@
 from typing import Dict, List, Optional, Set
 import asyncio
-import time
 import traceback
 from CommonClient import ClientCommandProcessor, CommonContext, get_base_parser, gui_enabled, logger, server_loop
 from NetUtils import ClientStatus
