@@ -58,7 +58,7 @@ class ALBWClientContext(CommonContext):
     show_citra_connect_message: bool
     show_triple_connected_message: bool
 
-    DATA_VERSION: int = 0
+    DATA_VERSION: int = 1
     AP_HEADER_LOCATION: int = 0x6fe5f8
     SAVES_LOCATION: int = 0x711de8
     EVENTS_LOCATION: int = 0x70b728
@@ -135,8 +135,6 @@ class ALBWClientContext(CommonContext):
             self.last_error = ""
         elif await self.interface.read_u32(self.save_ptr + 0xde8) != await self.interface.read_u32(self.AP_HEADER_LOCATION + 0x8):
             self.error("The loaded save file was created for a different multiworld. Choose a different save file.")
-        elif await self.interface.read_u32(self.save_ptr + 0xde4) != self.DATA_VERSION:
-            self.error("The loaded save file was created with a different version of albwrandomizer and is not compatible.")
 
     async def validate_seed(self) -> None:
         if not self.server_connected or not self.slot_data:
@@ -237,14 +235,13 @@ class ALBWClientContext(CommonContext):
             self.ravio_scouted = True
 
     async def get_item(self) -> None:
-        received_items_count = await self.interface.read_u32(self.save_ptr + 0xdec)
+        received_items_count = await self.interface.read_u32(self.AP_HEADER_LOCATION + 0x50)
         current_item = await self.interface.read_u32(self.AP_HEADER_LOCATION + 0xc)
         if len(self.items_received) > received_items_count and current_item == 0xffffffff:
             item_code = self.items_received[received_items_count].item - albw_base_id
-            if item_code is not None:
-                item_id = item_code_table[item_code].progress[0].item_id()
-                if item_id is not None:
-                    await self.interface.write_u32(self.AP_HEADER_LOCATION + 0xc, item_id)
+            item_id = item_code_table[item_code].progress[0].item_id()
+            assert item_id is not None
+            await self.interface.write_u32(self.AP_HEADER_LOCATION + 0xc, item_id)
 
 async def game_watcher(ctx: ALBWClientContext) -> None:
     global triple_addr
