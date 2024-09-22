@@ -51,7 +51,7 @@ class CitraInterface:
             raise CitraException(f"Lost connection to emulator ({str(e)})")
     
     async def read_u32(self, address: int) -> int:
-        return int.from_bytes(self.read(address, 4), "little")
+        return int.from_bytes(await self.read(address, 4), "little")
 
     def _write_single(self, address: int, data: bytes) -> None:
         out_packet = struct.pack("=IIIIII", self.PACKET_VERSION, 0, self.TYPE_WRITE, 8 + len(data), address, len(data))
@@ -70,4 +70,4 @@ class CitraInterface:
             raise CitraException(f"Lost connection to emulator ({str(e)})")
 
     async def write_u32(self, address: int, value: int) -> None:
-        self.write(address, value.to_bytes(4, "little"))
+        await self.write(address, value.to_bytes(4, "little"))

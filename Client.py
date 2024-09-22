@@ -30,6 +30,7 @@ class ALBWCommandProcessor(ClientCommandProcessor):
         if triple_addr == "":
             self.output("Not currently connected to a 3ds")
         else:
+            self.output(f"Disconnected from {triple_addr}.")
             triple_addr = ""
 
 class ALBWClientContext(CommonContext):
@@ -41,6 +42,7 @@ class ALBWClientContext(CommonContext):
     interface = None
     interface_connected: bool
     server_connected: bool
+    initial_delay: bool
     slot_data: Optional[Dict[str, any]]
     save_ptr: int
     event_flags_ptr: int
@@ -69,6 +71,7 @@ class ALBWClientContext(CommonContext):
         super().__init__(server_address, password)
         self.interface_connected = False
         self.server_connected = False
+        self.initial_delay = True
         self.slot_data = None
         self.course_flags = []
         self.ravio_scouted = False
@@ -100,17 +103,18 @@ class ALBWClientContext(CommonContext):
         if self.interface and await self.interface.connect():
             await asyncio.sleep(1)
             self.interface_connected = True
+            self.initial_delay = True
             if self.server_connected:
                 logger.info("Emulator connected")
             else:
                 logger.info("Emulator connected, but not yet connected to the multiworld")
     
     async def validate_rom(self) -> None:
-        if await self.interface.read(self.AP_HEADER_LOCATION, 4) != b"ARCH":
+        if (await self.interface.read(self.AP_HEADER_LOCATION, 4)) != b"ARCH":
             self.error("The running game was not patched with an Archipelago patch.")
-        elif await self.interface.read_u32(self.AP_HEADER_LOCATION + 0x4) < self.DATA_VERSION:
+        elif (await self.interface.read_u32(self.AP_HEADER_LOCATION + 0x4)) < self.DATA_VERSION:
             self.error("Version mismatch: update your albwrandomizer library and re-patch.")
-        elif await self.interface.read_u32(self.AP_HEADER_LOCATION + 0x4) > self.DATA_VERSION:
+        elif (await self.interface.read_u32(self.AP_HEADER_LOCATION + 0x4)) > self.DATA_VERSION:
             self.error("Version mismatch: update your apworld and restart the client.")
         else:
             name = await self.interface.read(self.AP_HEADER_LOCATION + 0x10, 0x40)
@@ -172,10 +176,9 @@ class ALBWClientContext(CommonContext):
         save_minigame_flags = (await self.interface.read(self.save_ptr + 0xda5, 1))[0]
         self.minigame_flags = cur_minigame_flags | save_minigame_flags
 
-        self.course_flags.clear()
         for course in range(0, 0x20):
-            cur_course_flags = await self.interface.read(self.course_flags_ptr + course * 0x16c + 0x160, 0x20) \
-                             + await self.interface.read(self.course_flags_ptr + course * 0x16c + 0x1a0, 0x10)
+            cur_course_flags = (await self.interface.read(self.course_flags_ptr + course * 0x16c + 0x160, 0x20)) \
+                             + (await self.interface.read(self.course_flags_ptr + course * 0x16c + 0x1a0, 0x10))
             save_course_flags = await self.interface.read(self.save_ptr + 0x560 + course * 0x40, 0x40)
             self.course_flags.append(bytes_or(cur_course_flags, save_course_flags))
 
@@ -203,6 +206,11 @@ class ALBWClientContext(CommonContext):
 
     async def check_locations(self) -> None:
         checks = []
+
+        self.event_flags = b""
+        self.course_flags.clear()
+        self.minigame_flags = 0
+
         await self.read_flags()
 
         for loc in all_locations:
@@ -255,42 +263,59 @@ async def game_watcher(ctx: ALBWClientContext) -> None:
                     if await triple.connect(triple_addr):
                         if ctx.show_triple_connected_message:
                             logger.info("3ds connected!")
+                        ctx.initial_delay = True
                         ctx.interface = triple
                         ctx.interface_connected = True
                         ctx.show_citra_connect_message = False
                         ctx.show_triple_connected_message = False
                     else:
                         logger.info("Couldn't connect to 3ds.")
+                        ctx.interface_connected = False
                         triple.disconnect()
                         triple_addr = ""
                 else:
                     triple.disconnect()
+                    ctx.interface_connected = False
                     ctx.show_triple_connected_message = True
                     ctx.interface = citra
                     await ctx.citra_connect()
             else:
+                if ctx.initial_delay:
+                    delay = 1
+                    if ctx.interface == triple:
+                        delay = 5
+                    await asyncio.sleep(delay)
+                    ctx.initial_delay = False
                 await ctx.validate_rom()
                 if not ctx.invalid:
                     await ctx.validate_seed()
                 if not ctx.invalid:
                     await ctx.validate_save()
-                if not ctx.invalid and ctx.server_connected and await ctx.get_pointers():
+                if triple_addr == "" and ctx.interface == triple:
+                    ctx.interface_connected = False
+                    triple.disconnect()
+                if not ctx.invalid and ctx.server_connected and (await ctx.get_pointers()):
                     await ctx.check_locations()
                     await ctx.get_item()
+                else:
+                    ctx.initial_delay = True
         except CitraException as e:
             logger.error(e)
+            logger.error(traceback.format_exc())
             ctx.interface_connected = False
             ctx.last_error = ""
             ctx.show_citra_connect_message = True
         except TripleException as e:
             if str(e) != "":
                 logger.error(e)
+                logger.error(traceback.format_exc())
             ctx.interface_connected = False
             ctx.last_error = ""
             ctx.show_citra_connect_message = True
             ctx.interface = citra
         except Exception as e:
             logger.error(e)
+            logger.error(traceback.format_exc())
             await ctx.disconnect()
             ctx.interface_connected = False
             ctx.server_connected = False
