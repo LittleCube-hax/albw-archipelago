@@ -3,6 +3,8 @@ import socket
 import struct
 import asyncio
 
+from CommonClient import logger
+
 class TripleException(Exception):
     pass
 
@@ -14,8 +16,8 @@ class TripleInterface:
     HEADER_SIZE: int = 16
     MAX_READ_SIZE: int = 32
     MAX_WRITE_SIZE: int = 24
-    TRIES_TO_TIMEOUT: int = 200000
 
+    tries_to_timeout: int = 200000
     socket: socket.socket
 
     async def connect(self, address) -> bool:
@@ -35,10 +37,17 @@ class TripleInterface:
         if hasattr(self, 'socket'):
             self.socket.close()
     
+    def set_timeout(self, timeout):
+        try:
+            self.tries_to_timeout = int(timeout)
+            return True
+        except ValueError as e:
+            return False
+    
     async def _recv(self, length) -> bytes:
         tries = 0
         while True:
-            if tries > self.TRIES_TO_TIMEOUT:
+            if tries > self.tries_to_timeout:
                 raise TripleException("")
             try:
                 in_packet = self.socket.recv(length)
@@ -51,7 +60,7 @@ class TripleInterface:
         tries = 0
         bytes_sent = 0
         while True:
-            if tries > self.TRIES_TO_TIMEOUT:
+            if tries > self.tries_to_timeout:
                 raise TripleException("")
             try:
                 bytes_sent += self.socket.send(packet)

@@ -10,6 +10,8 @@ from .Locations import LocationData, LocationType, all_locations, location_table
 from .Items import item_code_table
 from . import albw_base_id
 
+citra = CitraInterface()
+triple = TripleInterface()
 triple_addr = ""
 
 def bytes_or(a: bytes, b: bytes) -> bytes:
@@ -32,6 +34,14 @@ class ALBWCommandProcessor(ClientCommandProcessor):
         else:
             self.output(f"Disconnected from {triple_addr}.")
             triple_addr = ""
+    
+    def _cmd_3dstimeout(self, timeout):
+        """Set timeout (in connection attempts) until giving up connection to 3ds (default 200000)"""
+        global triple
+        if triple.set_timeout(timeout):
+            self.output(f"Successfully set timeout to {timeout} attempts")
+        else:
+            self.error(f"Invalid timeout: {timeout}")
 
 class ALBWClientContext(CommonContext):
     command_processor = ALBWCommandProcessor
@@ -251,9 +261,9 @@ class ALBWClientContext(CommonContext):
             await self.interface.write_u32(self.AP_HEADER_LOCATION + 0xc, item_id)
 
 async def game_watcher(ctx: ALBWClientContext) -> None:
+    global citra
+    global triple
     global triple_addr
-    citra = CitraInterface()
-    triple = TripleInterface()
     ctx.interface = citra
     while not ctx.exit_event.is_set():
         try:
