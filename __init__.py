@@ -224,7 +224,7 @@ class ALBWWorld(World):
         # starting weapon
         if self.starting_weapon is not None:
             starting_weapon_itempool = [item for item in self.pre_fill_items if item.name == self.starting_weapon.name]
-            ravio_location_names = [loc.name for loc in all_locations if loc.loctype == LocationType.Ravio]
+            ravio_location_names = [loc.name for loc in all_locations if loc.loctype == LocationType.Ravio and loc.name != "Ravio's Shop (6)"]
             self._initial_fill(starting_weapon_itempool, ravio_location_names)
     
     def fill_slot_data(self) -> None:
