@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from Options import PerGameCommonOptions, Choice, Range, Toggle
+from Options import PerGameCommonOptions, StartInventoryPool, Choice, Range, Toggle
 import albwrandomizer
 
 class LogicMode(Choice):
@@ -170,6 +170,7 @@ class Keysy(Choice):
 
 @dataclass
 class ALBWOptions(PerGameCommonOptions):
+    start_inventory_from_pool: StartInventoryPool
     logic_mode: LogicMode
     randomize_dungeon_prizes: RandomizeDungeonPrizes
     lorule_castle_requirement: LoruleCastleRequirement
