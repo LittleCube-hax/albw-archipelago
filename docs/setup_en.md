@@ -1,5 +1,7 @@
 # A Link Between Worlds Setup Guide
 
+## The .3gx file is not required if you are playing on Citra.
+
 ## Required Software
 
 - [Archipelago](https://github.com/ArchipelagoMW/Archipelago/releases).
