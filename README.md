@@ -6,10 +6,10 @@ This is the AP World for playing A Link Between Worlds in [Archipelago](https://
 
 See the [setup guide](https://github.com/LittleCube-hax/albw-archipelago/blob/main/docs/setup_en.md).
 
+This world can be played on a modded 3DS [using a plugin](https://github.com/LittleCube-hax/albw-ap-plugin). Follow the instructions on that page to set it up.
+
 ## Known Issues
 
-- The game crashes during the credits if items are received, e.g. if collect on goal is enabled.
-- If the client is connected before a save is loaded, it gives a fake error message about the loaded save not being an Archipelago save.
 - Checks that logically require portraits or pendants do not show up in the Universal Tracker.
 
 ## Not Yet Implemented

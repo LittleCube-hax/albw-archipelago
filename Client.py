@@ -1,6 +1,7 @@
 from typing import Dict, List, Optional, Set
 import asyncio
 import traceback
+from BaseClasses import ItemClassification
 from CommonClient import ClientCommandProcessor, CommonContext, get_base_parser, gui_enabled, logger, server_loop
 from NetUtils import ClientStatus
 from Patch import create_rom_file
@@ -64,18 +65,20 @@ class ALBWClientContext(CommonContext):
     course: int
     stage: int
     ravio_scouted: bool
+    to_hint: List[int]
     invalid: bool
     last_error: str
     show_citra_connect_message: bool
     show_triple_connected_message: bool
 
-    DATA_VERSION: int = 1
+    DATA_VERSION: int = 2
     AP_HEADER_LOCATION: int = 0x6fe5f8
     SAVES_LOCATION: int = 0x711de8
     EVENTS_LOCATION: int = 0x70b728
     COURSES_LOCATION: int = 0x70c8e0
     MINIGAME_LOCATION: int = 0x70d858
     GAME_LOCATION: int = 0x709df8
+    TASK_MAIN_GAME_VTABLE: int = 0x6d1db4
 
     def __init__(self, server_address: Optional[str], password: Optional[str]):
         super().__init__(server_address, password)
@@ -85,6 +88,7 @@ class ALBWClientContext(CommonContext):
         self.slot_data = None
         self.course_flags = []
         self.ravio_scouted = False
+        self.to_hint = []
         self.invalid = False
         self.last_error = ""
         self.show_citra_connect_message = True
@@ -110,8 +114,9 @@ class ALBWClientContext(CommonContext):
             logger.info("Connecting to emulator...")
         self.show_citra_connect_message = False
         self.interface_connected = False
-        if self.interface and await self.interface.connect():
+        if not await self.interface.connect():
             await asyncio.sleep(1)
+        else:
             self.interface_connected = True
             self.initial_delay = True
             if self.server_connected:
@@ -168,6 +173,10 @@ class ALBWClientContext(CommonContext):
         if cmd == "Connected":
             self.slot_data = args["slot_data"]
             self.server_connected = True
+
+        if cmd == "LocationInfo":
+            self.to_hint = [loc.location for loc in args["locations"]
+                if loc.flags & (ItemClassification.progression | ItemClassification.useful)]
         
     async def get_pointers(self) -> bool:
         self.event_flags_ptr = await self.interface.read_u32(self.EVENTS_LOCATION)
@@ -176,6 +185,23 @@ class ALBWClientContext(CommonContext):
         if self.event_flags_ptr == 0 or self.course_flags_ptr == 0 or self.minigame_ptr == 0:
             return False
         return True
+
+    async def is_in_game(self) -> bool:
+        framework = await self.interface.read_u32(self.AP_HEADER_LOCATION + 0x54)
+        if framework == 0:
+            return False
+        task_mgr = await self.interface.read_u32(framework + 0x1c)
+        start_node = task_mgr + 0x44
+        node = await self.interface.read_u32(start_node + 4)
+        loop_count = 0
+        while node != start_node and loop_count < 100:
+            task = await self.interface.read_u32(node + 8)
+            task_vtable = await self.interface.read_u32(task)
+            if task_vtable == self.TASK_MAIN_GAME_VTABLE:
+                return True
+            node = await self.interface.read_u32(node + 4)
+            loop_count += 1
+        return False
 
     async def read_flags(self) -> None:
         cur_event_flags = await self.interface.read(self.event_flags_ptr + 0x48, 0x80)
@@ -246,10 +272,18 @@ class ALBWClientContext(CommonContext):
             ravio_locations = [loc.code + albw_base_id for loc in all_locations if loc.loctype == LocationType.Ravio]
             await self.send_msgs([{
                 "cmd": "LocationScouts",
-                "create_as_hint": 2,
+                "create_as_hint": 0,
                 "locations": ravio_locations,
             }])
             self.ravio_scouted = True
+        
+        if self.to_hint:
+            await self.send_msgs([{
+                "cmd": "LocationScouts",
+                "create_as_hint": 2,
+                "locations": self.to_hint,
+            }])
+            self.to_hint = []
 
     async def get_item(self) -> None:
         received_items_count = await self.interface.read_u32(self.AP_HEADER_LOCATION + 0x50)
@@ -259,6 +293,9 @@ class ALBWClientContext(CommonContext):
             item_id = item_code_table[item_code].progress[0].item_id()
             assert item_id is not None
             await self.interface.write_u32(self.AP_HEADER_LOCATION + 0xc, item_id)
+    
+    async def get_null_item(self) -> None:
+        await self.interface.write_u32(self.AP_HEADER_LOCATION + 0xc, 0xffffffff)
 
 async def game_watcher(ctx: ALBWClientContext) -> None:
     global citra
@@ -300,15 +337,18 @@ async def game_watcher(ctx: ALBWClientContext) -> None:
                 if not ctx.invalid:
                     await ctx.validate_seed()
                 if not ctx.invalid:
-                    await ctx.validate_save()
-                if triple_addr == "" and ctx.interface == triple:
-                    ctx.interface_connected = False
-                    triple.disconnect()
-                if not ctx.invalid and ctx.server_connected and (await ctx.get_pointers()):
-                    await ctx.check_locations()
-                    await ctx.get_item()
-                else:
-                    ctx.initial_delay = True
+                    if await ctx.is_in_game():
+                        await ctx.validate_save()
+                        if triple_addr == "" and ctx.interface == triple:
+                            ctx.interface_connected = False
+                            triple.disconnect()
+                        if not ctx.invalid and ctx.server_connected and (await ctx.get_pointers()):
+                            await ctx.check_locations()
+                            await ctx.get_item()
+                        else:
+                            ctx.initial_delay = True
+                    else:
+                        await ctx.get_null_item()
         except CitraException as e:
             logger.error(e)
             logger.error(traceback.format_exc())
